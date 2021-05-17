@@ -33,13 +33,10 @@ default_args = {
     # "trigger_rule": "all_success"
 }
 
-def print_logs(dag_id, database):
-    """Print information about processing steps"""
-    print(f"{dag_id} start processing tables in database: {database}")
 
 
 for dag_id in config: 
-    with DAG(dag_id,
+   with DAG(dag_id,
         default_args=default_args,
         description=f"DAG in the loop {dag_id}",
         schedule_interval=config[dag_id]["schedule_interval"],
@@ -47,14 +44,17 @@ for dag_id in config:
         tags=["example"],
     ) as dag:
 
-        task_logs = PythonOperator(
-        task_id=f"print_logs_{dag_id}",
-        python_callable=print_logs,
-        op_kwargs={"dag_id": dag_id, "database": config[dag_id]["database"]},
-        )
+         def print_logs(dag_id, database):
+            """Print information about processing steps"""
+            print(f"{dag_id} start processing tables in database: {database}")
+         task_logs = PythonOperator(
+         task_id=f"print_logs_{dag_id}",
+         python_callable=print_logs,
+         op_kwargs={"dag_id": dag_id, "database": config[dag_id]["database"]},
+         )
 
-        task_ins = DummyOperator(task_id="insert_new_row")
+         task_ins = DummyOperator(task_id=f"insert_new_row_{dag_id}")
 
-        task_query = DummyOperator(task_id="query_the_table")
+         task_query = DummyOperator(task_id=f"query_the_table_{dag_id}")
 
-        task_logs >> task_ins >> task_query
+         task_logs >> task_ins >> task_query
