@@ -3,7 +3,10 @@ from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.operators.dummy import DummyOperator
+from airflow.operators.bash import BashOperator
 from airflow.operators.python import BranchPythonOperator
+from airflow.utils.trigger_rule import TriggerRule
+
 
 DBS = ["DB-1", "DB-2", "DB-3"]
 config = {
@@ -48,6 +51,7 @@ def create_dag(dag_id,
             return "insert_row"
         else:
             return "create_table"
+            
 
     dag = DAG(dag_id,
         default_args=default_args,
@@ -64,18 +68,21 @@ def create_dag(dag_id,
         op_kwargs={"dag_id": dag_id, "database": database_name},
         )
 
+        task_bash = BashOperator(task_id="get_current_user", bash_command="whoami")
+
         task_check_table = BranchPythonOperator(
             task_id="check_table_exist",
             python_callable=check_table_exists,
+            op_kwargs={"cond": True},
             dag=dag)
 
-        task_create_table = DummyOperator(task_id=f"create_table")
+        task_create_table = DummyOperator(task_id=f"create_table", trigger_rule=TriggerRule.NONE_FAILED)
 
-        task_ins = DummyOperator(task_id=f"insert_row")
+        task_ins = DummyOperator(task_id=f"insert_row", trigger_rule=TriggerRule.NONE_FAILED)
 
-        task_query = DummyOperator(task_id=f"query_the_table")
+        task_query = DummyOperator(task_id=f"query_the_table", trigger_rule=TriggerRule.NONE_FAILED)
 
-        task_logs >> task_check_table >> [task_create_table, task_ins] >> task_query
+        task_logs >> task_bash >> task_check_table >> [task_create_table, task_ins] >> task_query
 
     return dag
 
