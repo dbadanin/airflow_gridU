@@ -1,14 +1,18 @@
 
 from datetime import datetime, timedelta
 from airflow import DAG
+from airflow.models import xcom
 from airflow.operators.python import PythonOperator
 from airflow.operators.dummy import DummyOperator
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import BranchPythonOperator
+from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.utils.trigger_rule import TriggerRule
+from airflow.providers.postgres.hooks.postgres import PostgresHook
+from sqlalchemy import schema
+from random import randint
 
-
-DBS = ["DB-1", "DB-2", "DB-3"]
+DBS = ["DB_1", "DB_2", "DB_3"]
 config = {
     f"dag_id_{db_name}": {
         "schedule_interval": None, "start_date": datetime(2021, 5, 11), "database": db_name
@@ -41,17 +45,32 @@ def create_dag(dag_id,
                start_date_custom,
                database_name,
                default_args):
-    
+
     def print_process_start(dag_id, database):
         """Print information about processing steps"""
-        print(f"{dag_id} start processing tables in database: {database}")
+        inf = f"{dag_id} start processing tables in database: {database}"
+        print(inf)
 
-    def check_table_exists(cond):
-        if cond == True:
+
+    def check_table_exist(sql_to_get_schema, sql_to_check_table_exist, table_name):
+        """ callable function to get schema name and after that check if table exist """ 
+        hook = PostgresHook(postgres_conn_id="postgres_conn")
+        
+        query = hook.get_first(sql=sql_to_check_table_exist.format(table_name.lower()))
+    
+        if query:
             return "insert_row"
         else:
             return "create_table"
-            
+    
+    def insert_row(sql_query, table_name, custom_id, dt_now, **kwargs):
+        hook = PostgresHook(postgres_conn_id="postgres_conn")
+        connection = hook.get_conn()
+        cursor = connection.cursor()
+    
+        cursor.execute(
+            sql_query, (custom_id, kwargs["ti"].xcom_pull(task_ids="getting_current_user"), dt_now)
+        )
 
     dag = DAG(dag_id,
         default_args=default_args,
@@ -68,21 +87,38 @@ def create_dag(dag_id,
         op_kwargs={"dag_id": dag_id, "database": database_name},
         )
 
-        task_bash = BashOperator(task_id="get_current_user", bash_command="whoami")
+        task_bash = BashOperator(task_id="getting_current_user", bash_command="whoami")
 
-        task_check_table = BranchPythonOperator(
-            task_id="check_table_exist",
-            python_callable=check_table_exists,
-            op_kwargs={"cond": True},
-            dag=dag)
 
-        task_create_table = DummyOperator(task_id=f"create_table", trigger_rule=TriggerRule.NONE_FAILED)
+        task_check_table = BranchPythonOperator(task_id="check_table_exist", python_callable=check_table_exist,
+                                  op_args=["SELECT * FROM pg_tables;",
+                                           "SELECT * FROM information_schema.tables "
+                                           "WHERE table_name = '{}';", database_name], dag=dag)
 
-        task_ins = DummyOperator(task_id=f"insert_row", trigger_rule=TriggerRule.NONE_FAILED)
 
-        task_query = DummyOperator(task_id=f"query_the_table", trigger_rule=TriggerRule.NONE_FAILED)
+        task_create_table = PostgresOperator(
+            postgres_conn_id="postgres_conn",
+            task_id='create_table',
+            sql=f'''CREATE TABLE {database_name} (
+                custom_id integer NOT NULL, 
+                user_name VARCHAR (50) NOT NULL, 
+                timestamp TIMESTAMP NOT NULL
+                );''', trigger_rule=TriggerRule.NONE_FAILED,
 
-        task_logs >> task_bash >> task_check_table >> [task_create_table, task_ins] >> task_query
+        )
+        task_insert_row = PythonOperator(
+            task_id='insert_row',
+            python_callable=insert_row,
+            op_args=[f"INSERT INTO {database_name.lower()} " 
+                "VALUES(%s, %s, %s);", database_name.lower(), randint(1,10), datetime.now()]
+        )
+
+        task_query = BashOperator(
+            task_id=f"query_the_table_{database_name}", bash_command="echo '{{run_id}} ended' ",
+            trigger_rule=TriggerRule.NONE_FAILED
+        )
+
+        task_logs >> task_bash >> task_check_table >> [task_create_table, task_insert_row] >> task_query
 
     return dag
 
