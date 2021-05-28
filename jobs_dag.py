@@ -71,7 +71,17 @@ def create_dag(dag_id,
         cursor.execute(
             sql_query, (custom_id, kwargs["ti"].xcom_pull(task_ids="getting_current_user"), dt_now)
         )
+        connection.commit()
 
+    def rows_count(sql_query, table_name, **kwargs):
+        hook = PostgresHook(postgres_conn_id="postgres_conn")
+        connection = hook.get_conn()
+        cursor = connection.cursor()    
+        cursor.execute(sql_query)
+        count_r = cursor.fetchall()
+        print(count_r)
+        kwargs["ti"].xcom_push(key=f"{table_name}_rows_count", value=count_r)
+    
     dag = DAG(dag_id,
         default_args=default_args,
         description=f"DAG in the loop {dag_id}",
@@ -89,12 +99,11 @@ def create_dag(dag_id,
 
         task_bash = BashOperator(task_id="getting_current_user", bash_command="whoami")
 
-
-        task_check_table = BranchPythonOperator(task_id="check_table_exist", python_callable=check_table_exist,
-                                  op_args=["SELECT * FROM pg_tables;",
-                                           "SELECT * FROM information_schema.tables "
-                                           "WHERE table_name = '{}';", database_name], dag=dag)
-
+        task_check_table = BranchPythonOperator(
+            task_id="check_table_exist", python_callable=check_table_exist,
+            op_args=["SELECT * FROM pg_tables;",
+                    "SELECT * FROM information_schema.tables "
+                    "WHERE table_name = '{}';", database_name], dag=dag)
 
         task_create_table = PostgresOperator(
             postgres_conn_id="postgres_conn",
@@ -104,8 +113,8 @@ def create_dag(dag_id,
                 user_name VARCHAR (50) NOT NULL, 
                 timestamp TIMESTAMP NOT NULL
                 );''', trigger_rule=TriggerRule.NONE_FAILED,
-
         )
+
         task_insert_row = PythonOperator(
             task_id='insert_row',
             python_callable=insert_row,
@@ -113,9 +122,12 @@ def create_dag(dag_id,
                 "VALUES(%s, %s, %s);", database_name.lower(), randint(1,10), datetime.now()]
         )
 
-        task_query = BashOperator(
-            task_id=f"query_the_table_{database_name}", bash_command="echo '{{run_id}} ended' ",
+        task_query = PythonOperator(
+            task_id="rows_count", 
+            python_callable=rows_count,
+            op_args=[f"SELECT COUNT(*) FROM {database_name};", database_name],
             trigger_rule=TriggerRule.NONE_FAILED
+
         )
 
         task_logs >> task_bash >> task_check_table >> [task_create_table, task_insert_row] >> task_query
