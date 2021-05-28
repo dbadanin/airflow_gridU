@@ -12,6 +12,35 @@ from airflow.providers.postgres.hooks.postgres import PostgresHook
 from sqlalchemy import schema
 from random import randint
 
+
+from airflow.models.baseoperator import BaseOperator
+
+
+class PostgresGetCountRows(BaseOperator):   
+
+        def __init__(
+                self,
+                table_name: str,
+                post_conn_id: str,
+                **kwargs) -> None:
+            super().__init__(**kwargs)
+            self.table_name = table_name
+            self.post_conn_id = post_conn_id
+
+        def execute(self, context):
+            hook = PostgresHook(postgres_conn_id=self.post_conn_id)
+            connection = hook.get_conn()
+            cursor = connection.cursor()    
+            cursor.execute(f"SELECT COUNT(*) FROM {self.table_name.lower()};")
+            count_r = cursor.fetchall()
+            context["ti"].xcom_push(key=f"{self.table_name}_rows_count", value=count_r)
+            # sql = "select name from user"
+            # result = hook.get_first(sql)
+            # message = "Hello {}".format(result['name'])
+            # print(message)
+            # return message
+
+
 DBS = ["DB_1", "DB_2", "DB_3"]
 config = {
     f"dag_id_{db_name}": {
@@ -122,12 +151,8 @@ def create_dag(dag_id,
                 "VALUES(%s, %s, %s);", database_name.lower(), randint(1,10), datetime.now()]
         )
 
-        task_query = PythonOperator(
-            task_id="rows_count", 
-            python_callable=rows_count,
-            op_args=[f"SELECT COUNT(*) FROM {database_name};", database_name],
-            trigger_rule=TriggerRule.NONE_FAILED
-
+        task_query = PostgresGetCountRows(
+            database_name, "postgres_conn", task_id="query", trigger_rule=TriggerRule.NONE_FAILED
         )
 
         task_logs >> task_bash >> task_check_table >> [task_create_table, task_insert_row] >> task_query
