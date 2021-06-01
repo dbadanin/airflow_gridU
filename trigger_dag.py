@@ -1,39 +1,34 @@
 from datetime import timedelta, datetime
-import logging
+
 from airflow import DAG
+from airflow.models.base import Base
 from airflow.sensors.filesystem import FileSensor
 from airflow.sensors.external_task import ExternalTaskSensor
 from airflow.operators.trigger_dagrun import TriggerDagRunOperator
 from airflow.operators.bash import BashOperator
-from airflow.models.connection import Connection
 from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.operators.subdag import SubDagOperator
 
+from slack_sdk import WebClient
+from slack_sdk.errors import SlackApiError
 
-Variable.set("trigger_dir", "/opt/airflow/trigger_dir/")
-print(Variable.get("trigger_dir"))
-trigger_dir = Variable.get("trigger_dir")
-# conn = Connection(
-#     conn_id='check_file_conn',
-#     conn_type='fs',
-#     description=None,
-#     login='airflow',
-#     password='airflow',
-#     host='http://localhost',
-#     port=8080,
-#     schema=None,
-#     extra=None)
+DBS = ["DB_1", "DB_2", "DB_3"]
 
+TRIGGER_DIR = Variable.get("trigger_dir")
+SLACK_TOKEN = Variable.get("slack_token")
+DAG_ID = "DAG_SENSOR"
+SUB_DAG_ID = "XCOM_sub_dag"
+START_DATE = datetime(2000,1,1)
 
-default_args = {
+DEFAULT_ARGS = {
     "owner": "airflow",
-    "depends_on_past": False,
+    "depends_on_past": True,
     "email": ["airflow@example.com"],
     "email_on_failure": False,
     "email_on_retry": False,
     "retries": 1,
-    "retry_delay": timedelta(minutes=5),
+    "retry_delay": timedelta(minutes=1),
     # "queue": "bash_queue",
     # "pool": "backfill",
     # "priority_weight": 10,
@@ -49,43 +44,49 @@ default_args = {
     # "trigger_rule": "all_success"
 }
 
-DAG_ID = "DAG_SENSOR"
-SUB_DAG_ID = "XCOM_sub_dag"
-config = {
+CONFIGS = {
     DAG_ID: {
-        "schedule_interval": None, "start_date": datetime(2021, 5, 11)
+        "schedule_interval": None, "start_date": START_DATE
         }
     }
-def pushers_sub_dag(parent_dag_name, child_dag_name, config, default_args):
 
-    def print_result(ti):
-        DBS = ["DB-1", "DB-2", "DB-3"]
-        for db in DBS:
-            msg = ti.xcom_pull(task_ids=f"query_the_table_{db}", dag_id=f"{parent_dag_name}.{child_dag_name}")
-            print(f"the pulled message is: {msg}")
-            
+
+def sub_dag_processing():
+        
     sub_dag = DAG(
-        dag_id=f"{parent_dag_name}.{child_dag_name}", 
-        default_args=default_args,
-        schedule_interval=config[DAG_ID]["schedule_interval"],
-        start_date=config[DAG_ID]["start_date"],
+        dag_id=f"{DAG_ID}.{SUB_DAG_ID}", 
+        default_args=DEFAULT_ARGS,
+        schedule_interval=CONFIGS[DAG_ID]["schedule_interval"],
+        start_date=CONFIGS[DAG_ID]["start_date"],
         tags=["example"]
     )
+
+
     with sub_dag:
+
+        def print_logs(ti):
+
+            for db in DBS:
+                msg = ti.xcom_pull(
+                    task_ids=f"query", dag_id=f"dag_id_{db}",
+                    key=f"{db}_rows_count", include_prior_dates=True,
+                )
+                print(f"the pulled message is: {msg}")
+
+
         ext_sensor = ExternalTaskSensor(
-            task_id="waiting_for_main_DAG",
-            external_dag_id=parent_dag_name,
-            # external_task_id=None,
-            # execution_delta=timedelta(minutes=-1)
-            
+            task_id="waiting_for_trigger_another_tasK_acomplish",
+            external_dag_id=DAG_ID,
+            external_task_id="trigger_database_update",
+            # execution_delta=timedelta(minutes=5)
         )
 
         task_print_res = PythonOperator(
             task_id="print_result",
-            python_callable=print_result
+            python_callable=print_logs
             )
 
-        task_remove_file = BashOperator(task_id="delete_run_file", bash_command=f"rm {trigger_dir}")
+        task_remove_file = BashOperator(task_id="delete_run_file", bash_command=f"rm {TRIGGER_DIR}")
 
         task_finished = BashOperator(task_id="finish_op", bash_command="echo {{ts_nodash}} ")
 
@@ -93,30 +94,41 @@ def pushers_sub_dag(parent_dag_name, child_dag_name, config, default_args):
 
     return sub_dag
 
-
+print(TRIGGER_DIR)
 dag = DAG(DAG_ID,
-        default_args=default_args,
+        default_args=DEFAULT_ARGS,
         description=f"DAG_SENSOR",
-        schedule_interval=config[DAG_ID]["schedule_interval"],
-        start_date=config[DAG_ID]["start_date"],
+        schedule_interval=CONFIGS[DAG_ID]["schedule_interval"],
+        start_date=CONFIGS[DAG_ID]["start_date"],
         tags=["example"],
     )
 
 with dag:
 
+    def slack_send_message():
+
+        client = WebClient(token=SLACK_TOKEN)
+        try:
+            response = client.chat_postMessage(channel="airflowtask33", text="Hello from your app! :tada:")
+        except SlackApiError as e:
+            assert e.response["error"]  # str like 'invalid_auth', 'channel_not_found'
+
+
     sens = FileSensor(
-        task_id="checking_file", filepath=trigger_dir, fs_conn_id="check_file_conn", poke_interval=5
+        task_id="checking_file", filepath=TRIGGER_DIR, fs_conn_id="check_file_conn", poke_interval=15
     )
 
     task_trigger = TriggerDagRunOperator(
-        task_id="trigger_database_update", trigger_dag_id="dag_id_DB-1", wait_for_completion=True, poke_interval=5
+        task_id="trigger_database_update", trigger_dag_id="dag_id_DB_1", wait_for_completion=True, poke_interval=15,
     )
 
     sub_dag = SubDagOperator(
         task_id='XCOM_sub_dag',
-        subdag = pushers_sub_dag(DAG_ID, SUB_DAG_ID, config, default_args),
-        default_args=default_args,
-        dag=dag,
+        subdag = sub_dag_processing(),
+        default_args=DEFAULT_ARGS,
     )
-    sens >> task_trigger >> sub_dag
+
+    task_slack = PythonOperator(task_id="send_message_in_slack", python_callable=slack_send_message)
+
+    sens >> task_trigger >> sub_dag >> task_slack
 

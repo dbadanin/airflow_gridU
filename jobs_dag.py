@@ -1,53 +1,26 @@
+from random import randint
 
 from datetime import datetime, timedelta
 from airflow import DAG
 from airflow.models import xcom
 from airflow.operators.python import PythonOperator
-from airflow.operators.dummy import DummyOperator
 from airflow.operators.bash import BashOperator
 from airflow.operators.python import BranchPythonOperator
 from airflow.providers.postgres.operators.postgres import PostgresOperator
 from airflow.utils.trigger_rule import TriggerRule
 from airflow.providers.postgres.hooks.postgres import PostgresHook
-from sqlalchemy import schema
-from random import randint
-
-
 from airflow.models.baseoperator import BaseOperator
 
 
-class PostgresGetCountRows(BaseOperator):   
-
-        def __init__(
-                self,
-                table_name: str,
-                post_conn_id: str,
-                **kwargs) -> None:
-            super().__init__(**kwargs)
-            self.table_name = table_name
-            self.post_conn_id = post_conn_id
-
-        def execute(self, context):
-            hook = PostgresHook(postgres_conn_id=self.post_conn_id)
-            connection = hook.get_conn()
-            cursor = connection.cursor()    
-            cursor.execute(f"SELECT COUNT(*) FROM {self.table_name.lower()};")
-            count_r = cursor.fetchall()
-            context["ti"].xcom_push(key=f"{self.table_name}_rows_count", value=count_r)
-            # sql = "select name from user"
-            # result = hook.get_first(sql)
-            # message = "Hello {}".format(result['name'])
-            # print(message)
-            # return message
-
-
 DBS = ["DB_1", "DB_2", "DB_3"]
-config = {
+START_DATE = datetime(2000,1,1)
+
+CONFIGS = {
     f"dag_id_{db_name}": {
-        "schedule_interval": None, "start_date": datetime(2021, 5, 11), "database": db_name
+        "schedule_interval": None, "start_date": START_DATE, "database": db_name
         } for db_name in DBS}
 
-default_args = {
+DEFAULT_ARGS = {
     "owner": "airflow",
     "depends_on_past": False,
     "email": ["airflow@example.com"],
@@ -69,11 +42,32 @@ default_args = {
     # "sla_miss_callback": yet_another_function,
     # "trigger_rule": "all_success"
 }
+
+class PostgresGetCountRows(BaseOperator):   
+
+        def __init__(
+                self,
+                table_name: str,
+                post_conn_id: str,
+                **kwargs) -> None:
+            super().__init__(**kwargs)
+            self.table_name = table_name
+            self.post_conn_id = post_conn_id
+
+        def execute(self, context):
+            hook = PostgresHook(postgres_conn_id=self.post_conn_id)
+            connection = hook.get_conn()
+            cursor = connection.cursor()    
+            cursor.execute(f"SELECT COUNT(*) FROM {self.table_name.lower()};")
+            count_r = cursor.fetchall()
+            context["ti"].xcom_push(
+                key="{db_name}_rows_count".format(db_name=self.table_name), value=count_r,
+            )
+
 def create_dag(dag_id,
                schedule_unterval_custom,
                start_date_custom,
-               database_name,
-               default_args):
+               database_name):
 
     def print_process_start(dag_id, database):
         """Print information about processing steps"""
@@ -96,23 +90,13 @@ def create_dag(dag_id,
         hook = PostgresHook(postgres_conn_id="postgres_conn")
         connection = hook.get_conn()
         cursor = connection.cursor()
-    
         cursor.execute(
             sql_query, (custom_id, kwargs["ti"].xcom_pull(task_ids="getting_current_user"), dt_now)
         )
         connection.commit()
 
-    def rows_count(sql_query, table_name, **kwargs):
-        hook = PostgresHook(postgres_conn_id="postgres_conn")
-        connection = hook.get_conn()
-        cursor = connection.cursor()    
-        cursor.execute(sql_query)
-        count_r = cursor.fetchall()
-        print(count_r)
-        kwargs["ti"].xcom_push(key=f"{table_name}_rows_count", value=count_r)
-    
     dag = DAG(dag_id,
-        default_args=default_args,
+        default_args=DEFAULT_ARGS,
         description=f"DAG in the loop {dag_id}",
         schedule_interval=schedule_unterval_custom,
         start_date=start_date_custom,
@@ -159,11 +143,12 @@ def create_dag(dag_id,
 
     return dag
 
-for dag_id in config: 
-    globals()[dag_id] = create_dag(dag_id,
-                                  config[dag_id]["schedule_interval"],
-                                  config[dag_id]["start_date"],
-                                  config[dag_id]["database"],
-                                  default_args)
+for dag_id in CONFIGS: 
+    globals()[dag_id] = create_dag(
+        dag_id,
+        CONFIGS[dag_id]["schedule_interval"],
+        CONFIGS[dag_id]["start_date"],
+        CONFIGS[dag_id]["database"],
+    )
          
          
