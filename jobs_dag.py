@@ -48,14 +48,12 @@ class PostgresGetCountRows(BaseOperator):
         def __init__(
                 self,
                 table_name: str,
-                post_conn_id: str,
                 **kwargs) -> None:
             super().__init__(**kwargs)
             self.table_name = table_name
-            self.post_conn_id = post_conn_id
 
         def execute(self, context):
-            hook = PostgresHook(postgres_conn_id=self.post_conn_id)
+            hook = PostgresHook()
             connection = hook.get_conn()
             cursor = connection.cursor()    
             cursor.execute(f"SELECT COUNT(*) FROM {self.table_name.lower()};")
@@ -72,12 +70,11 @@ def create_dag(dag_id,
     def print_process_start(dag_id, database):
         """Print information about processing steps"""
         inf = f"{dag_id} start processing tables in database: {database}"
-        print(inf)
 
 
     def check_table_exist(sql_to_get_schema, sql_to_check_table_exist, table_name):
         """ callable function to get schema name and after that check if table exist """ 
-        hook = PostgresHook(postgres_conn_id="postgres_conn")
+        hook = PostgresHook()
         
         query = hook.get_first(sql=sql_to_check_table_exist.format(table_name.lower()))
     
@@ -85,9 +82,10 @@ def create_dag(dag_id,
             return "insert_row"
         else:
             return "create_table"
+
     
     def insert_row(sql_query, table_name, custom_id, dt_now, **kwargs):
-        hook = PostgresHook(postgres_conn_id="postgres_conn")
+        hook = PostgresHook()
         connection = hook.get_conn()
         cursor = connection.cursor()
         cursor.execute(
@@ -119,7 +117,6 @@ def create_dag(dag_id,
                     "WHERE table_name = '{}';", database_name], dag=dag)
 
         task_create_table = PostgresOperator(
-            postgres_conn_id="postgres_conn",
             task_id='create_table',
             sql=f'''CREATE TABLE {database_name} (
                 custom_id integer NOT NULL, 
@@ -136,7 +133,7 @@ def create_dag(dag_id,
         )
 
         task_query = PostgresGetCountRows(
-            database_name, "postgres_conn", task_id="query", trigger_rule=TriggerRule.NONE_FAILED
+            database_name, task_id="query", trigger_rule=TriggerRule.NONE_FAILED
         )
 
         task_logs >> task_bash >> task_check_table >> [task_create_table, task_insert_row] >> task_query

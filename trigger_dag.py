@@ -10,13 +10,17 @@ from airflow.models import Variable
 from airflow.operators.python import PythonOperator
 from airflow.operators.subdag import SubDagOperator
 
+
+
 from slack_sdk import WebClient
 from slack_sdk.errors import SlackApiError
 
+
+SLACK_TOKEN = Variable().get_variable_from_secrets(key="slack_secret")
 DBS = ["DB_1", "DB_2", "DB_3"]
 
 TRIGGER_DIR = Variable.get("trigger_dir")
-SLACK_TOKEN = Variable.get("slack_token")
+# SLACK_TOKEN = Variable.get("slack_token")
 DAG_ID = "DAG_SENSOR"
 SUB_DAG_ID = "XCOM_sub_dag"
 START_DATE = datetime(2000,1,1)
@@ -115,7 +119,7 @@ with dag:
 
 
     sens = FileSensor(
-        task_id="checking_file", filepath=TRIGGER_DIR, fs_conn_id="check_file_conn", poke_interval=15
+        task_id="checking_file", filepath=TRIGGER_DIR, poke_interval=15
     )
 
     task_trigger = TriggerDagRunOperator(
