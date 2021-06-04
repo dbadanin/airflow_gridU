@@ -1,6 +1,6 @@
 # Airflow gridU courses
 
-10. Code practice: DAG creation
+# Code practice: DAG creation
   1. Create “jobs_dag.py” file.
   2. In jobs_dag.py file define Python dict with params for each DAG, for example:
       config = {
