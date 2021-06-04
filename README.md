@@ -9,13 +9,13 @@
          'dag_id_3':{'schedule_interval': "", "start_date": datetime(2018, 11, 11)}}
   3. After that, you need to iterate through config (for example with ‘for dict in config‘) and generate DAGs in the loop.
 
-12. Code practice: DAG creation
+# Code practice: DAG creation
   1. Modify code to create 3 DAGs that run 3 tasks, and depend on each other as 1>>2>>3 (1 - start first): 
   2. Print the following information information into log: "{dag_id} start processing tables in database: {database}" (use PythonOperator for that)
   3. Add a dummy task (with DummyOperator) to mock insertion of a new row into DB. Suggested task id is  “insert_new_row”
   4. Add a dummy task (with DummyOperator) to mock table query. Suggested task id is “query_the_table”
 
-15. Code practice: Run the DAGs
+# Code practice: Run the DAGs
   1. Start airflow webserver with $ airflow webserver command
   2. Start airflow scheduler with $ airflow scheduler command
   3. Put your DAGfile in dag_folder
@@ -25,17 +25,17 @@
   7. After clicking on DAGs name you should see your DAG containing  three subsequent tasks ‘task_1 → task_2 → task_3 ‘.
   8. Run the DAG with either of the methods learned and check that it works correctly: all tasks must have a status ‘success’, and DAG should also be finished with   ‘success’ status.
 
-18. Code practice: Refactor dynamic DAG creation and add Branching
+# Code practice: Refactor dynamic DAG creation and add Branching
   1.Refactor your code to dynamically create DAGs so that all three DAGs appeared in UI.
   2.Then add a BranchOperator:
   3.Run the DAG and look at the DAG’s behavior.
 
-20. Code practice: Add correct Trigger Rule and more tasks
+# Code practice: Add correct Trigger Rule and more tasks
   1. Change the trigger rule to NONE_FAILED in your task that is the first common for both branches(insert row task).
   2. After changing a trigger rule check a DAG behavior in UI (start dag and check correctness of work)
   3. Add this task with BashOperator as a second step in our pipeline, so you will get the result.
 
-23. Code practice: Create a new DAG
+# Code practice: Create a new DAG
   1. Create ‘trigger_dag.py’ file.
   2. Instantiate DAG and add three tasks into it:
       - FileSensor (use from airflow.sensors.filesystem) .
@@ -46,14 +46,14 @@
   4. Run DAG
   5. Put a trigger file into an expected path (file name and path, that you use in FileSensor) and verify Sensor has noticed the ‘run’ file  and external DAG was     triggered.
  
-26. Code practice: add SubDAG and Variables in trigger DAG
+# Code practice: add SubDAG and Variables in trigger DAG
   1. Define SubDag with SubDagOperator
   2. Inside SubDAG you will have four tasks:
       - Sensor to validate status of triggered DAG (must be success)
       - Print the result (PythonOperator)
       - Remove ‘run’ file (BashOperator)
       - Create ‘finished_#timestamp’ file (BashOperator)
-28. Code practice: install and use PostgeSQL
+# Code practice: install and use PostgeSQL
   1. Modify the 2nd task with “getting current user” command. Push the result of this command to Xcom.
   2. Define more meaningful names for tables in DAG config. Modify the “check table exists” task to do real check.
   3. Now change the “create table” task. Use schema for tables:
@@ -69,12 +69,12 @@
         SELECT COUNT(*) FROM TABLE_NAME;  
      Push the result of this task into Xcom.
 
-31. Code practice: install and use PostgeSQL (Part II)
+# Code practice: install and use PostgeSQL (Part II)
   1. Let’s create our custom Operator - PostgreSQLCountRows (you can use any name that you want).
   2. Modify your table DAGs. Import your PostgreSQLCountRows operator from the file you have created. Change task query_table to use PostgreSQLCountRows operator.
   3. Run you DAG and test if everything works fine.
  
-33. Packaged DAGs
+# Packaged DAGs
   1. Follow instructions below to create your workspace:
       https://slack.com/get-started#/
   2. Create an application. Name it as you want.
@@ -82,7 +82,7 @@
   3. Create a PythonOperator that will send a message with DAG id and execution date to specific slack channel.
   4. Once the above steps are completed, package your Trigger DAG to zip archive with necessary dependencies and check that everything works as expected.
 
-34. Secrets backend
+# Secrets backend
   1. To enable ‘secrets backend’, add the following env variables to Airflow:
   After docker compose started, in order to add variable to Vault, perform the following actions:
   2. docker exec -it VAULT_DOCKER_ID sh
@@ -93,19 +93,19 @@
   7. Use Variable to get a slack token instead of getting it from Airflow connections.
   8. Ensure messages are sent correctly.
 
-35. Queues and DAG Serialization
+# Queues and DAG Serialization
   1. Assign all tasks in jobs_dag to a specific worker using ‘queue’ parameter(in docker-compose replace ‘command’ section in the worker with the following: worker   -q queue_name)
   2. Check tasks are assigned correctly (go to flower and make sure that worker with specified queue has running tasks)
 
-36. Functional DAGs
+# Functional DAGs
   Hands-on exercise:
   In the triggered DAG, you will have to change all Python Operators to PythonFunctionalOperator.
   
-38. TaskGroup
+# TaskGroup
   Practice:
   To train your knowledge, you can follow the link and copy code example for SubDag. Then, change it so that inside a single Dag, you have an example of SubDag and   TaskGroup at the same time. After that, in airflow UI, you will see a visual difference between SubDag and TaskGroup.
 
-39. Smart Sensors
+# Smart Sensors
   1. Define new sensor and inherit it from FileSensor
   2. Add poke_context_fields class attribute that contains all key names. In our case it would be filepath and fs_connection_id
   3. Add your custom sensor to sensors_enabled parameter
