@@ -1,6 +1,7 @@
 from random import randint
 
 from datetime import datetime, timedelta
+from airflow.decorators import dag, task
 from airflow import DAG
 from airflow.models import xcom
 from airflow.operators.python import PythonOperator
@@ -44,11 +45,8 @@ DEFAULT_ARGS = {
 }
 
 class PostgresGetCountRows(BaseOperator):   
-
-        def __init__(
-                self,
-                table_name: str,
-                **kwargs) -> None:
+        """ custom operator to insert a new row: | id | user | timestamp | """ 
+        def __init__(self, table_name: str, **kwargs) -> None:
             super().__init__(**kwargs)
             self.table_name = table_name
 
@@ -62,20 +60,22 @@ class PostgresGetCountRows(BaseOperator):
                 key="{db_name}_rows_count".format(db_name=self.table_name), value=count_r,
             )
 
-def create_dag(dag_id,
-               schedule_unterval_custom,
-               start_date_custom,
-               database_name):
 
+def create_dag(dag_id, schedule_unterval_custom, start_date_custom, database_name):
+    """ 
+    logging (print database name) ->
+    get_curent_user (bash: whoami) ->
+    check_table_exist (if true -> insert row |username|id|timestamp| false -> create_table) -> 
+    count_rows (push xcom)
+    """
     def print_process_start(dag_id, database):
-        """Print information about processing steps"""
+        """ callable function to print information about start processing """
         inf = f"{dag_id} start processing tables in database: {database}"
-
+        print(inf)
 
     def check_table_exist(sql_to_get_schema, sql_to_check_table_exist, table_name):
-        """ callable function to get schema name and after that check if table exist """ 
+        """ callable function to check if table exist """ 
         hook = PostgresHook()
-        
         query = hook.get_first(sql=sql_to_check_table_exist.format(table_name.lower()))
     
         if query:
@@ -85,6 +85,7 @@ def create_dag(dag_id,
 
     
     def insert_row(sql_query, table_name, custom_id, dt_now, **kwargs):
+        """ postgres hook to insert a new row: | id | user | timestamp | """
         hook = PostgresHook()
         connection = hook.get_conn()
         cursor = connection.cursor()
@@ -108,7 +109,7 @@ def create_dag(dag_id,
         op_kwargs={"dag_id": dag_id, "database": database_name},
         )
 
-        task_bash = BashOperator(task_id="getting_current_user", bash_command="whoami")
+        task_get_username = BashOperator(task_id="getting_current_user", bash_command="whoami")
 
         task_check_table = BranchPythonOperator(
             task_id="check_table_exist", python_callable=check_table_exist,
@@ -136,7 +137,7 @@ def create_dag(dag_id,
             database_name, task_id="query", trigger_rule=TriggerRule.NONE_FAILED
         )
 
-        task_logs >> task_bash >> task_check_table >> [task_create_table, task_insert_row] >> task_query
+        task_logs >> task_get_username >> task_check_table >> [task_create_table, task_insert_row] >> task_query
 
     return dag
 
